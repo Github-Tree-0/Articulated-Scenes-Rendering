@@ -92,92 +92,95 @@ def main():
 
         camera.entity.set_pose(sapien.Pose(mat44))
 
-        save_dir = './mbp/ims/{}'.format(cam_i)
-        articulate_label_dir = './mbp/art_labels/{}'.format(cam_i)
-        seg_dir = './mbp/seg/{}'.format(cam_i)
+        save_dir = '../data/mbp/ims/{}'.format(cam_i)
+        articulate_label_dir = '../data/mbp/art_labels/{}'.format(cam_i)
+        seg_dir = '../data/mbp/seg/{}'.format(cam_i)
 
         # TODO: Add camera matrix output
         scene.update_render()
         c2w = np.array(camera.get_model_matrix())
-        w2c = np.linalg.inv(c2w).tolist()
+        w2c = np.linalg.inv(c2w)
+        # w2c[0, :] *= -1
+        w2c[1, :] *= -1
+        w2c[2, :] *= -1
+
         if cam_i in test_ids:
-            test_w2cs.append(w2c)
+            test_w2cs.append(w2c.tolist())
         else:
-            train_w2cs.append(w2c)
+            train_w2cs.append(w2c.tolist())
 
-        for ratio_i, ratio in enumerate(np.linspace(1, 0, num_frames)):
-            qpos = q_low + ratio * (q_high - q_low)
-            object.set_qpos(np.array([[qpos]]))
+        # for ratio_i, ratio in enumerate(np.linspace(1, 0, num_frames)):
+        #     qpos = q_low + ratio * (q_high - q_low)
+        #     object.set_qpos(np.array([[qpos]]))
 
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
-            if not os.path.exists(articulate_label_dir):
-                os.makedirs(articulate_label_dir)
-            if not os.path.exists(seg_dir):
-                os.makedirs(seg_dir)
+        #     if not os.path.exists(save_dir):
+        #         os.makedirs(save_dir)
+        #     if not os.path.exists(articulate_label_dir):
+        #         os.makedirs(articulate_label_dir)
+        #     if not os.path.exists(seg_dir):
+        #         os.makedirs(seg_dir)
 
-            # scene.step()  # run a physical step
-            scene.update_render()  # sync pose from SAPIEN to renderer
-            camera.take_picture()  # submit rendering jobs to the GPU
+        #     # scene.step()  # run a physical step
+        #     scene.update_render()  # sync pose from SAPIEN to renderer
+        #     camera.take_picture()  # submit rendering jobs to the GPU
 
-            # ---------------------------------------------------------------------------- #
-            # RGBA
-            # ---------------------------------------------------------------------------- #
-            rgba = camera.get_picture("Color")  # [H, W, 4]
-            rgba_img = (rgba * 255).clip(0, 255).astype("uint8")
-            # Black background
-            rgb_img = rgba_img[..., :3] * (rgba_img[..., 3:] > 0)
-            rgb_pil = Image.fromarray(rgb_img)
-            rgb_pil.save(os.path.join(save_dir, '{:06}.jpg'.format(ratio_i)))
+        #     # ---------------------------------------------------------------------------- #
+        #     # RGBA
+        #     # ---------------------------------------------------------------------------- #
+        #     rgba = camera.get_picture("Color")  # [H, W, 4]
+        #     rgba_img = (rgba * 255).clip(0, 255).astype("uint8")
+        #     # Black background
+        #     rgb_img = rgba_img[..., :3] * (rgba_img[..., 3:] > 0)
+        #     rgb_pil = Image.fromarray(rgb_img)
+        #     rgb_pil.save(os.path.join(save_dir, '{:06}.jpg'.format(ratio_i)))
 
-            # ---------------------------------------------------------------------------- #
-            # XYZ position in the camera space
-            # ---------------------------------------------------------------------------- #
-            # Each pixel is (x, y, z, render_depth) in camera space (OpenGL/Blender)
-            position = camera.get_picture("Position")  # [H, W, 4]
+        #     # ---------------------------------------------------------------------------- #
+        #     # XYZ position in the camera space
+        #     # ---------------------------------------------------------------------------- #
+        #     # Each pixel is (x, y, z, render_depth) in camera space (OpenGL/Blender)
+        #     position = camera.get_picture("Position")  # [H, W, 4]
 
-            # OpenGL/Blender: y up and -z forward
-            points_opengl = position[..., :3][position[..., 3] < 1]
-            points_color = rgba[position[..., 3] < 1]
-            # Model matrix is the transformation from OpenGL camera space to SAPIEN world space
-            # camera.get_model_matrix() must be called after scene.update_render()!
-            model_matrix = camera.get_model_matrix()
-            points_world = points_opengl @ model_matrix[:3, :3].T + model_matrix[:3, 3]
+        #     # OpenGL/Blender: y up and -z forward
+        #     points_opengl = position[..., :3][position[..., 3] < 1]
+        #     points_color = rgba[position[..., 3] < 1]
+        #     # Model matrix is the transformation from OpenGL camera space to SAPIEN world space
+        #     # camera.get_model_matrix() must be called after scene.update_render()!
+        #     model_matrix = camera.get_model_matrix()
+        #     points_world = points_opengl @ model_matrix[:3, :3].T + model_matrix[:3, 3]
 
-            points_color = (np.clip(points_color, 0, 1) * 255).astype(np.uint8)
-            # trimesh.PointCloud(points_world, points_color).show()
+        #     points_color = (np.clip(points_color, 0, 1) * 255).astype(np.uint8)
+        #     # trimesh.PointCloud(points_world, points_color).show()
 
-            # ---------------------------------------------------------------------------- #
-            # Segmentation labels
-            # ---------------------------------------------------------------------------- #
-            # Each pixel is (visual_id, actor_id/link_id, 0, 0)
-            # visual_id is the unique id of each visual shape
-            seg_labels = camera.get_picture("Segmentation")  # [H, W, 4]
-            colormap = sorted(set(ImageColor.colormap.values()))
-            color_palette = np.array(
-                [ImageColor.getrgb(color) for color in colormap], dtype=np.uint8
-            )
-            # label0_image = seg_labels[..., 0].astype(np.uint8)  # mesh-level
-            label1_image = seg_labels[..., 1].astype(np.uint8)  # actor-level
-            # Or you can use aliases below
-            # label0_image = camera.get_visual_segmentation()
-            # label1_image = camera.get_actor_segmentation()
-            # label0_pil = Image.fromarray(color_palette[label0_image])
-            # label0_pil.save("label0.png")
-            label1_pil = Image.fromarray(color_palette[label1_image])
-            label1_pil.save(os.path.join(articulate_label_dir, '{:06}.png'.format(ratio_i)))
+        #     # ---------------------------------------------------------------------------- #
+        #     # Segmentation labels
+        #     # ---------------------------------------------------------------------------- #
+        #     # Each pixel is (visual_id, actor_id/link_id, 0, 0)
+        #     # visual_id is the unique id of each visual shape
+        #     seg_labels = camera.get_picture("Segmentation")  # [H, W, 4]
+        #     colormap = sorted(set(ImageColor.colormap.values()))
+        #     color_palette = np.array(
+        #         [ImageColor.getrgb(color) for color in colormap], dtype=np.uint8
+        #     )
+        #     # label0_image = seg_labels[..., 0].astype(np.uint8)  # mesh-level
+        #     label1_image = seg_labels[..., 1].astype(np.uint8)  # actor-level
+        #     # Or you can use aliases below
+        #     # label0_image = camera.get_visual_segmentation()
+        #     # label1_image = camera.get_actor_segmentation()
+        #     # label0_pil = Image.fromarray(color_palette[label0_image])
+        #     # label0_pil.save("label0.png")
+        #     label1_pil = Image.fromarray(color_palette[label1_image])
+        #     label1_pil.save(os.path.join(articulate_label_dir, '{:06}.png'.format(ratio_i)))
 
-            h, w, _ = rgba_img.shape
-            seg = rgba_img[..., -1].astype(bool)
-            Image.fromarray(seg).save(os.path.join(seg_dir, '{:06}.png'.format(ratio_i)))
+        #     seg = rgba_img[..., -1].astype(bool)
+        #     Image.fromarray(seg).save(os.path.join(seg_dir, '{:06}.png'.format(ratio_i)))
 
     train_json['w2c'] = np.array(train_w2cs)[None, ...].repeat(num_frames, axis=0).tolist()
     test_json['w2c'] = np.array(test_w2cs)[None, ...].repeat(num_frames, axis=0).tolist()
 
-    with open('./mbp/train_meta.json', 'w') as f:
+    with open('../data/mbp/train_meta.json', 'w') as f:
         json.dump(train_json, f)
 
-    with open('./mbp/test_meta.json', 'w') as f:
+    with open('../data/mbp/test_meta.json', 'w') as f:
         json.dump(test_json, f)
 
 if __name__ == "__main__":
