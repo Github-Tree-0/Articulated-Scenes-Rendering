@@ -13,6 +13,8 @@ import trimesh
 from sapien.utils.viewer import Viewer
 from transforms3d.euler import mat2euler
 
+import ipdb
+
 
 def main():
     scene = sapien.Scene()
@@ -21,22 +23,25 @@ def main():
     loader = scene.create_urdf_loader()
     loader.fix_root_link = True
     urdf_path = "../src/mbp/mobility.urdf"
-    asset = loader.load(urdf_path)
-    assert asset, "failed to load URDF."
+    object = loader.load(urdf_path)
+    assert object, "failed to load URDF."
 
+    ipdb.set_trace()
+    object.set_qpos(np.array([[-1.]]))
+
+    # Light sources
     scene.set_ambient_light([0.5, 0.5, 0.5])
     scene.add_directional_light([0, 1, -1], [0.5, 0.5, 0.5], shadow=True)
     scene.add_point_light([1, 2, 2], [1, 1, 1])
     scene.add_point_light([1, -2, 2], [1, 1, 1])
     scene.add_point_light([-1, 0, 1], [1, 1, 1])
 
-    # ---------------------------------------------------------------------------- #
     # Camera
-    # ---------------------------------------------------------------------------- #
     near, far = 0.1, 100
-    width, height = 640, 480
+    width, height = 1280, 960
 
     # Compute the camera pose by specifying forward(x), left(y) and up(z)
+    # The camera is looking at the origin
     cam_pos = np.array([-2, -2, 3])
     forward = -cam_pos / np.linalg.norm(cam_pos)
     left = np.cross([0, 0, 1], forward)
@@ -58,17 +63,17 @@ def main():
 
     print("Intrinsic matrix\n", camera.get_intrinsic_matrix())
 
-    camera_mount_actor = scene.create_actor_builder().build_kinematic()
-    mounted_camera = scene.add_mounted_camera(
-        name="mounted_camera",
-        mount=camera_mount_actor,
-        pose=sapien.Pose(mat44),
-        width=width,
-        height=height,
-        fovy=np.deg2rad(35),
-        near=near,
-        far=far,
-    )
+    # camera_mount_actor = scene.create_actor_builder().build_kinematic()
+    # mounted_camera = scene.add_mounted_camera(
+    #     name="mounted_camera",
+    #     mount=camera_mount_actor,
+    #     pose=sapien.Pose(mat44),
+    #     width=width,
+    #     height=height,
+    #     fovy=np.deg2rad(35),
+    #     near=near,
+    #     far=far,
+    # )
 
     scene.step()  # run a physical step
     scene.update_render()  # sync pose from SAPIEN to renderer
@@ -128,31 +133,31 @@ def main():
     label1_pil = Image.fromarray(color_palette[label1_image])
     label1_pil.save("label1.png")
 
-    # ---------------------------------------------------------------------------- #
-    # Take picture from the viewer
-    # ---------------------------------------------------------------------------- #
-    viewer = Viewer()
-    viewer.set_scene(scene)
-    # We show how to set the viewer according to the pose of a camera
-    # opengl camera -> sapien world
-    model_matrix = camera.get_model_matrix()
-    # sapien camera -> sapien world
-    # You can also infer it from the camera pose
-    model_matrix = model_matrix[:, [2, 0, 1, 3]] * np.array([-1, -1, 1, 1])
-    # The rotation of the viewer camera is represented as [roll(x), pitch(-y), yaw(-z)]
-    rpy = mat2euler(model_matrix[:3, :3]) * np.array([1, -1, -1])
-    viewer.set_camera_xyz(*model_matrix[0:3, 3])
-    viewer.set_camera_rpy(*rpy)
-    viewer.window.set_camera_parameters(near=0.05, far=100, fovy=1)
-    while not viewer.closed:
-        if viewer.window.key_down("p"):  # Press 'p' to take the screenshot
-            rgba = viewer.window.get_picture("Color")
-            rgba_img = (rgba * 255).clip(0, 255).astype("uint8")
-            rgba_pil = Image.fromarray(rgba_img)
-            rgba_pil.save("screenshot.png")
-        scene.step()
-        scene.update_render()
-        viewer.render()
+    # # ---------------------------------------------------------------------------- #
+    # # Take picture from the viewer
+    # # ---------------------------------------------------------------------------- #
+    # viewer = Viewer()
+    # viewer.set_scene(scene)
+    # # We show how to set the viewer according to the pose of a camera
+    # # opengl camera -> sapien world
+    # model_matrix = camera.get_model_matrix()
+    # # sapien camera -> sapien world
+    # # You can also infer it from the camera pose
+    # model_matrix = model_matrix[:, [2, 0, 1, 3]] * np.array([-1, -1, 1, 1])
+    # # The rotation of the viewer camera is represented as [roll(x), pitch(-y), yaw(-z)]
+    # rpy = mat2euler(model_matrix[:3, :3]) * np.array([1, -1, -1])
+    # viewer.set_camera_xyz(*model_matrix[0:3, 3])
+    # viewer.set_camera_rpy(*rpy)
+    # viewer.window.set_camera_parameters(near=0.05, far=100, fovy=1)
+    # while not viewer.closed:
+    #     if viewer.window.key_down("p"):  # Press 'p' to take the screenshot
+    #         rgba = viewer.window.get_picture("Color")
+    #         rgba_img = (rgba * 255).clip(0, 255).astype("uint8")
+    #         rgba_pil = Image.fromarray(rgba_img)
+    #         rgba_pil.save("screenshot.png")
+    #     scene.step()
+    #     scene.update_render()
+    #     viewer.render()
 
 
 if __name__ == "__main__":
