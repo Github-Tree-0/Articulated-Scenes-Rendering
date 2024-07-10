@@ -63,13 +63,15 @@ def main():
         far=far,
     )
 
-    init_cam_pos = np.array([-2, -2, 3])
+    radius = 3.5
+    thetas = np.radians([30, 45, 60])
 
-    num_cam = 24
+    num_cam = 36
     num_frames = 10
+    num_cam_per_theta = num_cam // len(thetas)
 
-    train_ids = [i for i in range(num_cam) if i % 6 != 0]
-    test_ids = [i for i in range(num_cam) if i % 6 == 0]
+    train_ids = [i for i in range(num_cam) if i % 9 != 0]
+    test_ids = [i for i in range(num_cam) if i % 9 == 0]
 
     K = camera.get_intrinsic_matrix()
     test_k = np.array(K)[None, None, ...].repeat(num_frames, axis=0).repeat(len(test_ids), axis=1).tolist()
@@ -83,11 +85,16 @@ def main():
     train_w2cs = []
     test_w2cs = []
 
-    for cam_i, angle in enumerate(np.linspace(0, 2 * np.pi, num_cam)):
-        rotation = np.array([[np.cos(angle), -np.sin(angle), 0],
-                                [np.sin(angle), np.cos(angle), 0],
-                                [0, 0, 1]])
-        cam_pos = rotation @ init_cam_pos
+    for cam_i in range(num_cam):
+        # Calculate the current theta and phi values
+        theta = thetas[cam_i // num_cam_per_theta]
+        phi = (cam_i % num_cam_per_theta) * (2 * np.pi / num_cam_per_theta)
+
+        # Compute the camera position in Cartesian coordinates
+        x = radius * np.sin(theta) * np.cos(phi)
+        y = radius * np.sin(theta) * np.sin(phi)
+        z = radius * np.cos(theta)
+        cam_pos = np.array([x, y, z])
         mat44 = cal_mat44(cam_pos)
 
         camera.entity.set_pose(sapien.Pose(mat44))
@@ -109,70 +116,70 @@ def main():
         else:
             train_w2cs.append(w2c.tolist())
 
-        # for ratio_i, ratio in enumerate(np.linspace(1, 0, num_frames)):
-        #     qpos = q_low + ratio * (q_high - q_low)
-        #     object.set_qpos(np.array([[qpos]]))
+        for ratio_i, ratio in enumerate(np.linspace(1, 0, num_frames)):
+            qpos = q_low + ratio * (q_high - q_low)
+            object.set_qpos(np.array([[qpos]]))
 
-        #     if not os.path.exists(save_dir):
-        #         os.makedirs(save_dir)
-        #     if not os.path.exists(articulate_label_dir):
-        #         os.makedirs(articulate_label_dir)
-        #     if not os.path.exists(seg_dir):
-        #         os.makedirs(seg_dir)
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            if not os.path.exists(articulate_label_dir):
+                os.makedirs(articulate_label_dir)
+            if not os.path.exists(seg_dir):
+                os.makedirs(seg_dir)
 
-        #     # scene.step()  # run a physical step
-        #     scene.update_render()  # sync pose from SAPIEN to renderer
-        #     camera.take_picture()  # submit rendering jobs to the GPU
+            # scene.step()  # run a physical step
+            scene.update_render()  # sync pose from SAPIEN to renderer
+            camera.take_picture()  # submit rendering jobs to the GPU
 
-        #     # ---------------------------------------------------------------------------- #
-        #     # RGBA
-        #     # ---------------------------------------------------------------------------- #
-        #     rgba = camera.get_picture("Color")  # [H, W, 4]
-        #     rgba_img = (rgba * 255).clip(0, 255).astype("uint8")
-        #     # Black background
-        #     rgb_img = rgba_img[..., :3] * (rgba_img[..., 3:] > 0)
-        #     rgb_pil = Image.fromarray(rgb_img)
-        #     rgb_pil.save(os.path.join(save_dir, '{:06}.jpg'.format(ratio_i)))
+            # ---------------------------------------------------------------------------- #
+            # RGBA
+            # ---------------------------------------------------------------------------- #
+            rgba = camera.get_picture("Color")  # [H, W, 4]
+            rgba_img = (rgba * 255).clip(0, 255).astype("uint8")
+            # Black background
+            rgb_img = rgba_img[..., :3] * (rgba_img[..., 3:] > 0)
+            rgb_pil = Image.fromarray(rgb_img)
+            rgb_pil.save(os.path.join(save_dir, '{:06}.jpg'.format(ratio_i)))
 
-        #     # ---------------------------------------------------------------------------- #
-        #     # XYZ position in the camera space
-        #     # ---------------------------------------------------------------------------- #
-        #     # Each pixel is (x, y, z, render_depth) in camera space (OpenGL/Blender)
-        #     position = camera.get_picture("Position")  # [H, W, 4]
+            # ---------------------------------------------------------------------------- #
+            # XYZ position in the camera space
+            # ---------------------------------------------------------------------------- #
+            # Each pixel is (x, y, z, render_depth) in camera space (OpenGL/Blender)
+            position = camera.get_picture("Position")  # [H, W, 4]
 
-        #     # OpenGL/Blender: y up and -z forward
-        #     points_opengl = position[..., :3][position[..., 3] < 1]
-        #     points_color = rgba[position[..., 3] < 1]
-        #     # Model matrix is the transformation from OpenGL camera space to SAPIEN world space
-        #     # camera.get_model_matrix() must be called after scene.update_render()!
-        #     model_matrix = camera.get_model_matrix()
-        #     points_world = points_opengl @ model_matrix[:3, :3].T + model_matrix[:3, 3]
+            # OpenGL/Blender: y up and -z forward
+            points_opengl = position[..., :3][position[..., 3] < 1]
+            points_color = rgba[position[..., 3] < 1]
+            # Model matrix is the transformation from OpenGL camera space to SAPIEN world space
+            # camera.get_model_matrix() must be called after scene.update_render()!
+            model_matrix = camera.get_model_matrix()
+            points_world = points_opengl @ model_matrix[:3, :3].T + model_matrix[:3, 3]
 
-        #     points_color = (np.clip(points_color, 0, 1) * 255).astype(np.uint8)
-        #     # trimesh.PointCloud(points_world, points_color).show()
+            points_color = (np.clip(points_color, 0, 1) * 255).astype(np.uint8)
+            # trimesh.PointCloud(points_world, points_color).show()
 
-        #     # ---------------------------------------------------------------------------- #
-        #     # Segmentation labels
-        #     # ---------------------------------------------------------------------------- #
-        #     # Each pixel is (visual_id, actor_id/link_id, 0, 0)
-        #     # visual_id is the unique id of each visual shape
-        #     seg_labels = camera.get_picture("Segmentation")  # [H, W, 4]
-        #     colormap = sorted(set(ImageColor.colormap.values()))
-        #     color_palette = np.array(
-        #         [ImageColor.getrgb(color) for color in colormap], dtype=np.uint8
-        #     )
-        #     # label0_image = seg_labels[..., 0].astype(np.uint8)  # mesh-level
-        #     label1_image = seg_labels[..., 1].astype(np.uint8)  # actor-level
-        #     # Or you can use aliases below
-        #     # label0_image = camera.get_visual_segmentation()
-        #     # label1_image = camera.get_actor_segmentation()
-        #     # label0_pil = Image.fromarray(color_palette[label0_image])
-        #     # label0_pil.save("label0.png")
-        #     label1_pil = Image.fromarray(color_palette[label1_image])
-        #     label1_pil.save(os.path.join(articulate_label_dir, '{:06}.png'.format(ratio_i)))
+            # ---------------------------------------------------------------------------- #
+            # Segmentation labels
+            # ---------------------------------------------------------------------------- #
+            # Each pixel is (visual_id, actor_id/link_id, 0, 0)
+            # visual_id is the unique id of each visual shape
+            seg_labels = camera.get_picture("Segmentation")  # [H, W, 4]
+            colormap = sorted(set(ImageColor.colormap.values()))
+            color_palette = np.array(
+                [ImageColor.getrgb(color) for color in colormap], dtype=np.uint8
+            )
+            # label0_image = seg_labels[..., 0].astype(np.uint8)  # mesh-level
+            label1_image = seg_labels[..., 1].astype(np.uint8)  # actor-level
+            # Or you can use aliases below
+            # label0_image = camera.get_visual_segmentation()
+            # label1_image = camera.get_actor_segmentation()
+            # label0_pil = Image.fromarray(color_palette[label0_image])
+            # label0_pil.save("label0.png")
+            label1_pil = Image.fromarray(color_palette[label1_image])
+            label1_pil.save(os.path.join(articulate_label_dir, '{:06}.png'.format(ratio_i)))
 
-        #     seg = rgba_img[..., -1].astype(bool)
-        #     Image.fromarray(seg).save(os.path.join(seg_dir, '{:06}.png'.format(ratio_i)))
+            seg = rgba_img[..., -1].astype(bool)
+            Image.fromarray(seg).save(os.path.join(seg_dir, '{:06}.png'.format(ratio_i)))
 
     train_json['w2c'] = np.array(train_w2cs)[None, ...].repeat(num_frames, axis=0).tolist()
     test_json['w2c'] = np.array(test_w2cs)[None, ...].repeat(num_frames, axis=0).tolist()
